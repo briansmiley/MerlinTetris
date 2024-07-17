@@ -2,6 +2,7 @@
 //prettier-ignore
 import {Game,gameInit,hardDropBlock,rotateBlock,setAllowedInput,shiftBlock,startGame,tickGravity} from "./Tetris";
 import { Coordinate, InputCategory } from "./TetrisConfig";
+import { drawString } from "./pixelText";
 
 var upButton = merlinButton(pressUp, "", "ArrowUp");
 var downButton = merlinButton(pressDown, "", "ArrowDown");
@@ -125,6 +126,7 @@ function setup() {
 
 function draw() {
   background(0);
+  drawString(game.score.toString(), ORIGIN[0] - 1, ORIGIN[1] - 3, "white");
   if (game.tickInterval !== prevTickInterval) {
     prevTickInterval = game.tickInterval;
     clearInterval(tickIntervalId);
