@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the order of files to concatenate
-files=("MerlinTetris.ts" "TetrisConfig.ts" "Tetris.ts")
+files=("./src/MerlinTetris.ts" "./src/TetrisConfig.ts" "./src/Tetris.ts")
 
 # Delete existing output files if they exist
 rm -rf dist

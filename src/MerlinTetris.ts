@@ -1,4 +1,4 @@
-/// <reference path="./node_modules/@types/p5/global.d.ts" />
+/// <reference path="../node_modules/@types/p5/global.d.ts" />
 //prettier-ignore
 import {Game,gameInit,hardDropBlock,rotateBlock,setAllowedInput,shiftBlock,startGame,tickGravity} from "./Tetris";
 import { Coordinate, InputCategory } from "./TetrisConfig";

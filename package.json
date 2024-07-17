@@ -2,9 +2,11 @@
   "devDependencies": {
     "typescript": "^5.5.3"
   },
+  "scripts": {
+    "build": "./merlinCompile.sh"
+  },
   "dependencies": {
     "@types/p5": "^1.7.6",
-    "p5": "^1.9.4",
-    "tslib": "^2.6.3"
+    "p5": "^1.9.4"
   }
 }
