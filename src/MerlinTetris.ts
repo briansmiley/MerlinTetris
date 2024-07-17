@@ -107,7 +107,7 @@ const keyBindings: Record<string, KeyBinding> = {
 let game: Game;
 let tickIntervalId: number; //reference to clean up the game clock when tick changes
 let prevTickInterval: number; //reference to check when game tick interval changes
-const ORIGIN: Coordinate = [4, 20];
+const ORIGIN: Coordinate = [4, 10];
 const CELL_SIZE = 2;
 function setup() {
   createCanvas(44, 66);
