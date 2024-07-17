@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "typescript": "^5.5.3"
+  },
+  "dependencies": {
+    "@types/p5": "^1.7.6",
+    "p5": "^1.9.4",
+    "tslib": "^2.6.3"
+  }
+}
