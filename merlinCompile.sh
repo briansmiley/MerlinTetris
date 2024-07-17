@@ -29,4 +29,7 @@ echo "Concatenation complete. Running TypeScript compiler..."
 # Run TypeScript compiler on the concatenated file
 tsc
 
+
 echo "TypeScript compilation complete."
+echo "Removing concatenated .ts file..."
+rm $outputFile
