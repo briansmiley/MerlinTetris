@@ -14,6 +14,8 @@ var sButton = merlinButton(pressS, "", "s");
 var nButton = merlinButton(pressN, "", "n");
 function pressKey(key) {
     const binding = keyBindings[key];
+    if (!game.allowedInputs[binding.type])
+        return; //skip input if not allowed
     game = setAllowedInput(binding.callback(game), binding.type, false);
     setTimeout(() => (game = setAllowedInput(game, binding.type, true)), game.CONFIG.POLL_RATES[binding.type]);
 }
@@ -95,7 +97,7 @@ const keyBindings = {
 let game;
 let tickIntervalId; //reference to clean up the game clock when tick changes
 let prevTickInterval; //reference to check when game tick interval changes
-const ORIGIN = [4, 20];
+const ORIGIN = [4, 10];
 const CELL_SIZE = 2;
 function setup() {
     createCanvas(44, 66);
@@ -121,26 +123,15 @@ function draw() {
 const renderGameState = (game, origin, cellSize) => {
     push();
     //draw the board
-    game.board.forEach((row, y) => {
-        row.forEach((block, x) => {
-            const colr = block ? block : "black";
+    const renderableBoard = boardWithFallingBlock(game);
+    renderableBoard.forEach((row, y) => {
+        row.forEach((cell, x) => {
             const xPos = x * cellSize + origin[0];
             const yPos = y * cellSize + origin[1];
-            stroke(colr);
+            const colr = cell.type === "shadow" ? "#202020" : cell.color;
             pointRect(xPos, yPos, cellSize, cellSize, colr, true);
         });
     });
-    //draw the falling block
-    const fallingBlock = game.fallingBlock;
-    if (fallingBlock) {
-        fallingBlock.body.forEach((coord, i) => {
-            const xPos = cellSize * (coord[1] + fallingBlock.origin[1]) + origin[0];
-            const yPos = cellSize * (coord[0] + fallingBlock.origin[0]) + origin[1];
-            const colr = game.CONFIG.SHAPE_COLORS[fallingBlock.shape];
-            stroke(colr);
-            pointRect(xPos, yPos, cellSize, cellSize, colr, true);
-        });
-    }
     pop();
 };
 /**manually draw a rectangle using points to avoid rounding
@@ -149,10 +140,11 @@ const renderGameState = (game, origin, cellSize) => {
 const pointRect = (x, y, w, h, colr, floor = false) => {
     //floor x and y if specified
     const [xPos, yPos] = floor ? [Math.floor(x), Math.floor(y)] : [x, y];
+    const typeStuffColr = Array.isArray(colr) ? color(colr) : color(colr); //handles splitting the union type for p5 overloading
     loadPixels();
     for (let i = 0; i < w; i++) {
         for (let j = 0; j < h; j++) {
-            set(xPos + i, yPos + j, color(colr));
+            set(xPos + i, yPos + j, color(typeStuffColr));
         }
     }
     updatePixels();
@@ -204,15 +196,15 @@ const CONFIG = {
     },
     SPAWN_POINT: [0, 5],
     SHAPE_COLORS: {
-        I: "#00ffff",
-        T: "#800080",
-        O: "#ffff00",
-        S: "#ff0000",
-        Z: "#00ff00",
-        L: "#ff7f00",
-        J: "#0000ff"
+        I: [0, 255, 255],
+        T: [128, 0, 128],
+        O: [255, 255, 0],
+        S: [255, 0, 0],
+        Z: [0, 255, 0],
+        L: [255, 127, 0],
+        J: [0, 0, 255]
     },
-    WALL_COLOR: "#717171",
+    WALL_COLOR: [113, 113, 113],
     BOARD_WIDTH: 10,
     BOARD_HEIGHT: 20,
     STARTING_TICK_INTERVAL: 500,
@@ -233,7 +225,6 @@ const CONFIG = {
 /**
  * Functions
  */
-/**GAME_FLOW */
 /**creates a new blank slate game object; requires a call to spawnNewBlock() to create first falling block */
 const gameInit = () => {
     return {
@@ -243,7 +234,6 @@ const gameInit = () => {
         linesCleared: 0,
         blocksSpawned: 0,
         tickInterval: CONFIG.STARTING_TICK_INTERVAL,
-        clock: 0,
         over: false,
         allowedInputs: { rotate: true, shift: true, drop: true },
         groundGracePeriod: {
@@ -253,16 +243,19 @@ const gameInit = () => {
         CONFIG: CONFIG
     };
 };
+const newEmptyCell = () => ({ color: [0, 0, 0], type: "empty" });
+const newWallCell = () => ({
+    color: [...CONFIG.WALL_COLOR],
+    type: "wall"
+});
 const newEmptyRow = () => {
-    const row = Array(CONFIG.BOARD_WIDTH).fill(null);
-    return CONFIG.WALLS
-        ? [CONFIG.WALL_COLOR].concat(row).concat([CONFIG.WALL_COLOR])
-        : row;
+    const row = Array(CONFIG.BOARD_WIDTH).fill(newEmptyCell());
+    return CONFIG.WALLS ? [newWallCell()].concat(row).concat(newWallCell()) : row;
 };
 const newBlankBoard = () => {
     const newBoard = [...Array(CONFIG.BOARD_HEIGHT)].map(() => newEmptyRow());
     return CONFIG.WALLS
-        ? newBoard.concat([Array(CONFIG.BOARD_WIDTH + 2).fill(CONFIG.WALL_COLOR)])
+        ? newBoard.concat([Array(CONFIG.BOARD_WIDTH + 2).fill(newWallCell())])
         : newBoard;
 };
 const setTickInterval = (game, newInterval) => ({
@@ -286,15 +279,18 @@ const startGame = (game) => game.blocksSpawned === 0
         ? spawnNewBlock(gameInit())
         : game;
 const spawnNewBlock = (game) => {
-    const [spawnR, spawnC] = CONFIG.SPAWN_POINT;
+    // const [spawnR, spawnC] = CONFIG.SPAWN_POINT;
     const newBlock = newFallingBlock();
     if (blockIntersectsSettledOrWalls(game.board, newBlock))
         return endGame(game);
-    if (game.board[spawnR][spawnC])
+    if (boardCoordIsOccupied(game.board, CONFIG.SPAWN_POINT))
         return endGame(game);
     return {
         ...game,
-        fallingBlock: newFallingBlock(),
+        fallingBlock: {
+            self: newBlock,
+            dropLocation: hardDropEndOrigin(game.board, newBlock)
+        },
         blocksSpawned: game.blocksSpawned + 1,
         tickInterval: CONFIG.STARTING_TICK_INTERVAL /
             CONFIG.SPEED_SCALING **
@@ -324,6 +320,9 @@ const isOffScreen = (coord, board) => {
         coord[1] < 0 ||
         coord[1] > board[0].length - 1);
 };
+//check whether a board location is occupied by a block or wall
+const boardCoordIsOccupied = (board, coord) => cellIsOccupied(board[coord[0]][coord[1]]);
+const cellIsOccupied = (cell) => ["block", "wall"].includes(cell.type);
 //checks whether a proposed block position will be a collision
 const blockIntersectsSettledOrWalls = (board, block) => {
     const occupiedCells = blockOccupiedCells(block);
@@ -331,7 +330,7 @@ const blockIntersectsSettledOrWalls = (board, block) => {
         return false;
     return occupiedCells.some(boardLocation => boardLocation[0] >= 0 && //if we are above the board we arent checking anything
         (isOffScreen(boardLocation, board) || //(should only happen in walless mode; disallow if goes offscreen)
-            board[boardLocation[0]][boardLocation[1]]) //interaction if board is occupied
+            boardCoordIsOccupied(board, boardLocation)) //interaction if board is occupied
     );
 };
 //get the next spawnable block, currently at random
@@ -360,10 +359,11 @@ const settleBlockAndSpawnNew = (game) => {
     const [oldBoard, fallenBlock] = [game.board, game.fallingBlock];
     if (fallenBlock === null)
         return game;
-    const fallenBlockEndCoords = blockOccupiedCells(fallenBlock);
-    const newColor = CONFIG.SHAPE_COLORS[fallenBlock.shape];
+    const fallenBlockEndCoords = blockOccupiedCells(fallenBlock.self);
+    const newColor = CONFIG.SHAPE_COLORS[fallenBlock.self.shape];
     const newBoard = structuredClone(oldBoard);
-    fallenBlockEndCoords.forEach(coord => !isOffScreen(coord, newBoard) && (newBoard[coord[0]][coord[1]] = newColor));
+    fallenBlockEndCoords.forEach(coord => !isOffScreen(coord, newBoard) &&
+        (newBoard[coord[0]][coord[1]] = { color: newColor, type: "block" }));
     return spawnNewBlock({ ...game, board: newBoard });
 };
 /**
@@ -373,7 +373,7 @@ const tickGravity = (game) => {
     const newGame = clearThenCollapseRows(game);
     if (newGame.fallingBlock === null)
         return newGame;
-    const nextBlock = shiftedBlock(newGame.fallingBlock, "D");
+    const nextBlock = shiftedBlock(newGame.fallingBlock.self, "D");
     //if we are on the ground...)
     if (blockOnGround(game))
         //prevent settling if the grace period bool is true and hasnt been reset more than the MAX COUNT number of times
@@ -388,15 +388,22 @@ const tickGravity = (game) => {
             }
             : //otherwise settle and spawn new
                 settleBlockAndSpawnNew(newGame);
-    return clearFullRowsAndScore(collapseGapRows({ ...newGame, fallingBlock: nextBlock }) //NOTE THINK ABOUT THE GAME FLOW HERE?
+    return clearFullRowsAndScore(collapseGapRows({
+        ...newGame,
+        fallingBlock: {
+            ...newGame.fallingBlock,
+            self: nextBlock,
+            dropLocation: hardDropEndOrigin(newGame.board, nextBlock)
+        }
+    }) //NOTE THINK ABOUT THE GAME FLOW HERE?
     );
 };
 /** SCORING/CLEAR  EVENTS */
 /**A row is full if it contains no nulls and is not entirely wall (i.e. the floor)*/
-const rowIsFull = (row) => row.every(isNotNull) && !row.every(cell => cell === CONFIG.WALL_COLOR);
-const rowIsEmpty = (row) => !rowIncludesBlock(row) && !row.every(cell => cell === CONFIG.WALL_COLOR);
+const rowIsFull = (row) => row.every(cellIsOccupied) && !row.every(cell => cell.type === "wall");
+const rowIsEmpty = (row) => !rowIncludesBlock(row) && !row.every(cell => cell.type === "wall");
 /**Row has at least one cell that matches SHAPE_COLORS */
-const rowIncludesBlock = (row) => row.some(cell => cell && Object.values(CONFIG.SHAPE_COLORS).includes(cell));
+const rowIncludesBlock = (row) => row.some(cell => cell.type === "block");
 /** Gets a list of the indices of full rows on the board */
 const fullRows = (board) => {
     return board
@@ -433,7 +440,13 @@ const collapseGapRows = (game) => {
         newBoard.splice(rowIndex, 1);
         newBoard = [newEmptyRow()].concat(newBoard);
     });
-    return { ...game, board: newBoard };
+    const newFallingBlock = game.fallingBlock
+        ? {
+            ...game.fallingBlock,
+            dropLocation: hardDropEndOrigin(newBoard, game.fallingBlock.self)
+        }
+        : null;
+    return { ...game, board: newBoard, fallingBlock: newFallingBlock };
 };
 /** Clears any full rows and simultaneously collapses them */
 const clearThenCollapseRows = (game) => collapseGapRows(clearFullRowsAndScore(game));
@@ -448,7 +461,7 @@ const rotatedBlock = (block, direction) => block === null
     };
 // /**Tells us if a block is on the ground (i.e. one more gravity tick would settle it)*/
 const blockOnGround = (game) => game.fallingBlock !== null &&
-    blockIntersectsSettledOrWalls(game.board, shiftedBlock(game.fallingBlock, "D"));
+    blockIntersectsSettledOrWalls(game.board, shiftedBlock(game.fallingBlock.self, "D"));
 /**Grants the falling block protection against being settled by gravity because it was just moved (gets removed by one gravity tick)*/
 const grantGrace = (game) => ({
     ...game,
@@ -456,9 +469,9 @@ const grantGrace = (game) => ({
 });
 /** Rotates a block 90° CW | CCW about its origin */
 const rotateBlock = (game, direction) => {
-    if (game.fallingBlock === null || game.fallingBlock.shape === "O")
+    if (game.fallingBlock === null || game.fallingBlock.self.shape === "O")
         return game;
-    const newBlock = rotatedBlock(game.fallingBlock, direction);
+    const newBlock = rotatedBlock(game.fallingBlock.self, direction);
     //if the rotated block intersects the board or walls, try shifting it one or two spaces in every direction and pick the first that works. Otherwise return with no rotation
     if (blockIntersectsSettledOrWalls(game.board, newBlock)) {
         const directions = ["R", "L", "U", "D"];
@@ -467,7 +480,13 @@ const rotateBlock = (game, direction) => {
                 const shiftCandidate = shiftedBlock(newBlock, shiftDir, distance);
                 //return as soon as we find a shift that makes the rotation work (and set grace to true)
                 if (!blockIntersectsSettledOrWalls(game.board, shiftCandidate))
-                    return grantGrace({ ...game, fallingBlock: shiftCandidate });
+                    return grantGrace({
+                        ...game,
+                        fallingBlock: {
+                            self: shiftCandidate,
+                            dropLocation: hardDropEndOrigin(game.board, shiftCandidate)
+                        }
+                    });
             }
         }
         //if no shifts worked, return game as is
@@ -476,7 +495,10 @@ const rotateBlock = (game, direction) => {
     //if we dont intersect, return the game with a rotated block
     return grantGrace({
         ...game,
-        fallingBlock: newBlock
+        fallingBlock: {
+            self: newBlock,
+            dropLocation: hardDropEndOrigin(game.board, newBlock)
+        }
     });
 };
 /**Takes in a block and returns one shifted in the argument direction */
@@ -496,39 +518,66 @@ const shiftedBlock = (block, direction, distance = 1) => {
 const shiftBlock = (game, direction) => {
     if (game.fallingBlock === null)
         return game;
-    const nextBlock = shiftedBlock(game.fallingBlock, direction, 1);
+    const nextBlock = shiftedBlock(game.fallingBlock.self, direction, 1);
     return blockIntersectsSettledOrWalls(game.board, nextBlock)
         ? direction === "D"
             ? settleBlockAndSpawnNew(game)
             : game
-        : grantGrace({ ...game, fallingBlock: nextBlock });
+        : grantGrace({
+            ...game,
+            fallingBlock: {
+                self: nextBlock,
+                dropLocation: hardDropEndOrigin(game.board, nextBlock)
+            }
+        });
+};
+/**Returns the block that would result from a hypothetical hard drop */
+const hardDropEndOrigin = (board, fallingBlock) => {
+    if (fallingBlock === null)
+        return [0, 0];
+    const coords = blockOccupiedCells(fallingBlock);
+    //the highest row occupied by the falling block
+    const highestRowInBlock = coords.reduce((prev, curr) => Math.min(curr[0], prev), board.length);
+    //for a given column, get the index of the row containing a column's highest occupied cell (that is below the top of the block)
+    const colFloorIndex = (column) => {
+        const floorIndex = board.findIndex((row, idx) => idx > highestRowInBlock && cellIsOccupied(row[column]));
+        return floorIndex === -1 ? board.length : floorIndex; //if floorIndex is -1 we didnt find a non-null row so the floor is the board end
+    };
+    //map the current falling block's cells to their distances from (1 cell above) the floor in their column
+    const heights = coords.map(([row, column]) => colFloorIndex(column) - row - 1);
+    //drop distance is the minimum of these heights
+    const distanceToDrop = Math.min(...heights);
+    return [fallingBlock.origin[0] + distanceToDrop, fallingBlock.origin[1]];
 };
 /**Drops a block all the way to the settled pile settles it into the board*/
 const hardDropBlock = (game) => {
     if (game.fallingBlock === null || game.over)
         return game;
-    const coords = blockOccupiedCells(game.fallingBlock);
-    const highestRowInBlock = coords.reduce((prev, curr) => Math.min(curr[0], prev), game.board.length);
-    //get the index of the row containing a column's highest occupied cell (that is below the top of the block)
-    const colFloorIndex = (column) => {
-        const floorIndex = game.board.findIndex((row, idx) => idx > highestRowInBlock && isNotNull(row[column]));
-        return floorIndex === -1 ? game.board.length : floorIndex; //if floorIndex is -1 we didnt find a non-null row so the floor is the board end
+    const newBlockOrigin = hardDropEndOrigin(game.board, game.fallingBlock.self); //get the position of a hard drop
+    const newBlock = {
+        ...game.fallingBlock,
+        self: { ...game.fallingBlock.self, origin: newBlockOrigin }
     };
-    //map the current falling block's cells to their distances from (1 cell above) the floor in their column
-    const heights = coords.map(([row, column]) => colFloorIndex(column) - 1 - row);
-    const distanceToDrop = Math.min(...heights);
-    const newBlock = shiftedBlock(game.fallingBlock, "D", distanceToDrop);
-    return settleBlockAndSpawnNew({ ...game, fallingBlock: newBlock });
+    return settleBlockAndSpawnNew({ ...game, fallingBlock: newBlock }); //move the falling block to that end position, settle, and spawn new
 };
 /** Returns a board containing the fallingBlock cells filled in for rendering purposes */
 const boardWithFallingBlock = (game) => {
     const { fallingBlock, board } = game;
-    const occupiedCells = blockOccupiedCells(fallingBlock);
-    if (occupiedCells === null)
+    if (fallingBlock === null)
         return board;
-    return board.map((row, r) => row.map((cell, c) => occupiedCells.some(coord => coord[0] === r && coord[1] === c)
-        ? CONFIG.SHAPE_COLORS[fallingBlock.shape]
-        : cell));
+    const fallingBlockOccupiedCells = blockOccupiedCells(fallingBlock.self);
+    const shadowOccupiedCells = blockOccupiedCells({
+        ...fallingBlock.self,
+        origin: fallingBlock.dropLocation
+    });
+    return board.map((row, r) => row.map((cell, c) => fallingBlockOccupiedCells.some(coord => coord[0] === r && coord[1] === c)
+        ? { color: CONFIG.SHAPE_COLORS[fallingBlock.self.shape], type: "block" }
+        : shadowOccupiedCells.some(coord => coord[0] === r && coord[1] === c)
+            ? {
+                color: CONFIG.SHAPE_COLORS[fallingBlock.self.shape],
+                type: "shadow"
+            }
+            : cell));
 };
 let charErrorLogged = {};
 function drawCharacter(charPixels, charX, charY, charColor) {

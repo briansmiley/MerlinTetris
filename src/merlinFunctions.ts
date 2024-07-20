@@ -1,4 +1,4 @@
-const merlinButton = (
+export const merlinButton = (
   callback: () => void,
   midiCode: string,
   keyCode: string
