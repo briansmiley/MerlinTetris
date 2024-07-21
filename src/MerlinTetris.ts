@@ -106,6 +106,7 @@ const keyBindings: Record<string, KeyBinding> = {
   }
 };
 let game: Game;
+const gameVersion = "0.0.1";
 let tickIntervalId: number; //reference to clean up the game clock when tick changes
 let prevTickInterval: number; //reference to check when game tick interval changes
 const ORIGIN: Coordinate = [4, 10];
@@ -175,4 +176,25 @@ const pointRect = (
     }
   }
   updatePixels();
+};
+
+//draft; not sure if this will work yet
+const postScore = (
+  score: number,
+  player_initials: string,
+  game_version: string,
+  lines_cleared: number
+) => {
+  fetch("http://merlins.place/api/tetris-score", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      score: score,
+      player_initials: player_initials,
+      game_version: game_version,
+      lines_cleared: lines_cleared
+    })
+  });
 };
