@@ -154,17 +154,19 @@ const renderGameState = (game: Game, origin: Coordinate, cellSize: number) => {
   });
   //draw the preview upcoming shape
 
-  const upcomingShapeName = game.shapeQueue[0];
+  const upcomingShapes = game.shapeQueue.slice(0, 3);
   const upcomingOrigin: Coordinate = [
     origin[0] + renderableBoard[0].length * cellSize + 5,
     origin[1]
   ];
-  const upcomingShapeCoords = CONFIG.BLOCK_SHAPES[upcomingShapeName];
-  upcomingShapeCoords.forEach(([y, x]) => {
-    const xPos = x * cellSize + upcomingOrigin[0];
-    const yPos = y * cellSize + upcomingOrigin[1];
-    const colr = CONFIG.SHAPE_COLORS[upcomingShapeName];
-    pointRect(xPos, yPos, cellSize, cellSize, colr, true);
+  upcomingShapes.forEach((upcomingShapeName, i) => {
+    const upcomingShapeCoords = CONFIG.BLOCK_SHAPES[upcomingShapeName];
+    upcomingShapeCoords.forEach(([y, x]) => {
+      const xPos = x * cellSize + upcomingOrigin[0];
+      const yPos = y * cellSize + upcomingOrigin[1] + i * cellSize * 4;
+      const colr = CONFIG.SHAPE_COLORS[upcomingShapeName];
+      pointRect(xPos, yPos, cellSize, cellSize, colr, true);
+    });
   });
   pop();
 };
