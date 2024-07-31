@@ -95,6 +95,7 @@ const keyBindings = {
     }
 };
 let game;
+const gameVersion = "0.0.1";
 let tickIntervalId; //reference to clean up the game clock when tick changes
 let prevTickInterval; //reference to check when game tick interval changes
 const ORIGIN = [4, 10];
@@ -132,6 +133,19 @@ const renderGameState = (game, origin, cellSize) => {
             pointRect(xPos, yPos, cellSize, cellSize, colr, true);
         });
     });
+    //draw the preview upcoming shape
+    const upcomingShapeName = game.shapeQueue[0];
+    const upcomingOrigin = [
+        origin[0] + renderableBoard[0].length * cellSize + 5,
+        origin[1]
+    ];
+    const upcomingShapeCoords = CONFIG.BLOCK_SHAPES[upcomingShapeName];
+    upcomingShapeCoords.forEach(([y, x]) => {
+        const xPos = x * cellSize + upcomingOrigin[0];
+        const yPos = y * cellSize + upcomingOrigin[1];
+        const colr = CONFIG.SHAPE_COLORS[upcomingShapeName];
+        pointRect(xPos, yPos, cellSize, cellSize, colr, true);
+    });
     pop();
 };
 /**manually draw a rectangle using points to avoid rounding
@@ -149,13 +163,29 @@ const pointRect = (x, y, w, h, colr, floor = false) => {
     }
     updatePixels();
 };
+//draft; not sure if this will work yet
+const postScore = (score, player_initials, game_version, lines_cleared) => {
+    fetch("http://merlins.place/api/tetris-score", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            score: score,
+            player_initials: player_initials,
+            game_version: game_version,
+            lines_cleared: lines_cleared
+        })
+    });
+};
+const SHAPE_NAMES = ["I", "T", "O", "S", "Z", "L", "J"];
 const CONFIG = {
     BLOCK_SHAPES: {
         I: [
+            [0, -2],
             [0, -1],
             [0, 0],
-            [0, 1],
-            [0, 2]
+            [0, 1]
         ],
         T: [
             [0, 0],
@@ -214,7 +244,8 @@ const CONFIG = {
         base: 10,
         drop: 250,
         rotate: 250,
-        shift: 70
+        shift: 70,
+        hold: 1000000 //hold allowance is handled by the hold/spawn block functions
     },
     WALLS: true,
     MAX_GRACE_COUNT: 5 //maximum number of gravity ticks you can skip settling from by moving
@@ -230,12 +261,14 @@ const gameInit = () => {
     return {
         board: newBlankBoard(),
         fallingBlock: null,
+        shapeQueue: [...newShapeBag(), ...newShapeBag()],
+        heldShape: null,
         score: 0,
         linesCleared: 0,
         blocksSpawned: 0,
         tickInterval: CONFIG.STARTING_TICK_INTERVAL,
         over: false,
-        allowedInputs: { rotate: true, shift: true, drop: true },
+        allowedInputs: { rotate: true, shift: true, drop: true, hold: true },
         groundGracePeriod: {
             protected: false,
             counter: 0
@@ -262,11 +295,10 @@ const setTickInterval = (game, newInterval) => ({
     ...game,
     tickInterval: newInterval
 });
-const setAllowedInput = (game, input, state) => {
-    const newGame = { ...game };
-    newGame.allowedInputs[input] = state;
-    return newGame;
-};
+const setAllowedInput = (game, input, state) => ({
+    ...game,
+    allowedInputs: { ...game.allowedInputs, [input]: state }
+});
 //
 // const incrementGameSpeed = (game: Game): Game => ({
 //   ...game,
@@ -278,9 +310,19 @@ const startGame = (game) => game.blocksSpawned === 0
     : game.over
         ? spawnNewBlock(gameInit())
         : game;
+const newBlockFromShape = (shape) => ({
+    origin: CONFIG.SPAWN_POINT,
+    shape: shape,
+    body: CONFIG.BLOCK_SHAPES[shape]
+});
+/**Does nothing more less than pop a shape off the next queue and start it falling */
 const spawnNewBlock = (game) => {
-    // const [spawnR, spawnC] = CONFIG.SPAWN_POINT;
-    const newBlock = newFallingBlock();
+    // pop the next shape off the queue
+    const newBlockShape = game.shapeQueue[0];
+    const newBlock = newBlockFromShape(newBlockShape);
+    const newQueue = game.shapeQueue
+        .slice(1)
+        .concat(game.shapeQueue.length < 8 ? newShapeBag() : []); //
     if (blockIntersectsSettledOrWalls(game.board, newBlock))
         return endGame(game);
     if (boardCoordIsOccupied(game.board, CONFIG.SPAWN_POINT))
@@ -291,10 +333,12 @@ const spawnNewBlock = (game) => {
             self: newBlock,
             dropLocation: hardDropEndOrigin(game.board, newBlock)
         },
+        shapeQueue: newQueue,
         blocksSpawned: game.blocksSpawned + 1,
         tickInterval: CONFIG.STARTING_TICK_INTERVAL /
             CONFIG.SPEED_SCALING **
                 Math.floor(game.linesCleared / CONFIG.LEVEL_LINES),
+        allowedInputs: { ...game.allowedInputs, hold: true }, //turn on holding once we spawn a new block (hold function manually turns this off after a swap)
         groundGracePeriod: {
             protected: false,
             counter: 0
@@ -334,25 +378,27 @@ const blockIntersectsSettledOrWalls = (board, block) => {
     );
 };
 //get the next spawnable block, currently at random
-/**For later: The NES Tetris randomizer is super basic. Basically it rolls an 8 sided die, 1-7 being the 7 pieces
- *  and 8 being "reroll". If you get the same piece as the last piece you got, or you hit the reroll number, It'll
- * roll a 2nd 7 sided die. This time you can get the same piece as your previous one and the roll is final. */
-const getNewBlockShape = () => {
-    const keys = Object.keys(CONFIG.BLOCK_SHAPES);
-    return keys[(keys.length * Math.random()) << 0];
-};
-/**
- * Creates a falling block at the top of the board (overwrites any current falling block)
- */
-const newFallingBlock = () => {
-    const shape = getNewBlockShape();
-    const body = CONFIG.BLOCK_SHAPES[shape];
-    const newBlock = {
-        origin: CONFIG.SPAWN_POINT,
-        shape,
-        body
-    };
-    return newBlock;
+/**Deprecated fully random enxt shape algorithm*/
+// const getRandomNewBlockShape = (): TetrisShape => {
+//   //just a random block every
+//   const keys = Object.keys(CONFIG.BLOCK_SHAPES) as Array<
+//     keyof typeof CONFIG.BLOCK_SHAPES
+//   >;
+//   return keys[(keys.length * Math.random()) << 0];
+// };
+/**Create/replace the bag of shapes abvailable to pick the next block in the queue from */
+const newShapeBag = () => {
+    // Create a well-shuffled copy of SHAPE_NAMES
+    const shuffledShapes = [...SHAPE_NAMES];
+    for (let i = shuffledShapes.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledShapes[i], shuffledShapes[j]] = [
+            shuffledShapes[j],
+            shuffledShapes[i]
+        ];
+    }
+    // Assign the shuffled array to the game's shapeBag
+    return shuffledShapes;
 };
 /** Locks the game's fallingBlock into place as part of the board*/
 const settleBlockAndSpawnNew = (game) => {
@@ -514,15 +560,35 @@ const shiftedBlock = (block, direction, distance = 1) => {
         origin: coordinateSum(block.origin, transforms[direction])
     };
 };
+/**Add current falling piece to the heldShape slot; spawns next block popped either from held slot or the queue if it's the first held piece*/
+const holdAndPopHeld = (game) => {
+    //if there is no falling block, do nothing
+    if (game.fallingBlock === null)
+        return game;
+    //If there is no held shape, we hold the current falling block then spawn a new block as usual
+    let newGame;
+    if (game.heldShape === null)
+        newGame = spawnNewBlock({
+            ...game,
+            heldShape: game.fallingBlock.self.shape
+        });
+    //Otherwise:
+    //return a game state where we spawn a new block having just shifted the held shape onto the head of the queue
+    else
+        newGame = spawnNewBlock({
+            ...game,
+            heldShape: game.fallingBlock.self.shape, //previous falling shape is now held
+            shapeQueue: [game.heldShape, ...game.shapeQueue.slice(1)] //previously held shape is now popped off the queue by spawnNewBlock
+        });
+    return setAllowedInput(newGame, "hold", false); //disable hold until next piece
+};
 /**Shifts the game's falling block one unit L | R | D */
 const shiftBlock = (game, direction) => {
     if (game.fallingBlock === null)
         return game;
     const nextBlock = shiftedBlock(game.fallingBlock.self, direction, 1);
     return blockIntersectsSettledOrWalls(game.board, nextBlock)
-        ? direction === "D"
-            ? settleBlockAndSpawnNew(game)
-            : game
+        ? game
         : grantGrace({
             ...game,
             fallingBlock: {
@@ -579,6 +645,35 @@ const boardWithFallingBlock = (game) => {
             }
             : cell));
 };
+/**Returns a board for displaying upcoming shape(s) */
+const miniPreviewBoard = (shapeQueue) => {
+    const upcomingShape = shapeQueue[0];
+    // Create a small box with walls
+    const boxSize = 8; // 6x6 inner area + 1 cell padding on each side
+    const miniBoard = Array(boxSize)
+        .fill(null)
+        .map(() => Array(boxSize).fill({ color: CONFIG.WALL_COLOR, type: "wall" }));
+    // Fill the inner area with empty cells
+    for (let r = 1; r < boxSize - 1; r++) {
+        for (let c = 1; c < boxSize - 1; c++) {
+            miniBoard[r][c] = { color: [0, 0, 0], type: "empty" };
+        }
+    }
+    if (upcomingShape === undefined)
+        return miniBoard; //if there is no upcoming shape, return the blank board
+    // Place the upcoming shape in the center of the box
+    const origin = [4, 4];
+    const shapeCoords = CONFIG.BLOCK_SHAPES[upcomingShape].map(coord => coordinateSum(coord, origin));
+    shapeCoords.forEach(([r, c]) => {
+        miniBoard[r][c] = {
+            color: CONFIG.SHAPE_COLORS[upcomingShape],
+            type: "block"
+        };
+    });
+    return miniBoard;
+};
+/**Literally does the same thing as miniPreviewBoard but for the held shape for now */
+const miniHeldBoard = (heldShape) => heldShape ? miniPreviewBoard([heldShape]) : miniPreviewBoard([]);
 let charErrorLogged = {};
 function drawCharacter(charPixels, charX, charY, charColor) {
     loadPixels();

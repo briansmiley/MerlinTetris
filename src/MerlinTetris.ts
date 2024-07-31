@@ -1,7 +1,7 @@
 /// <reference path="../node_modules/@types/p5/global.d.ts" />
 //prettier-ignore
-import {Game,boardWithFallingBlock,gameInit,hardDropBlock,rotateBlock,setAllowedInput,shiftBlock,startGame,tickGravity} from "./Tetris";
-import { Coordinate, InputCategory, TetrisColor } from "./TetrisConfig";
+import {Game,boardWithFallingBlock,coordinateSum,gameInit,hardDropBlock,miniPreviewBoard,rotateBlock,setAllowedInput,shiftBlock,startGame,tickGravity} from "./Tetris";
+import { CONFIG, Coordinate, InputCategory } from "./TetrisConfig";
 import { drawString } from "./pixelText";
 import { merlinButton } from "./merlinFunctions";
 
@@ -151,6 +151,20 @@ const renderGameState = (game: Game, origin: Coordinate, cellSize: number) => {
       const colr = cell.type === "shadow" ? "#202020" : cell.color;
       pointRect(xPos, yPos, cellSize, cellSize, colr, true);
     });
+  });
+  //draw the preview upcoming shape
+
+  const upcomingShapeName = game.shapeQueue[0];
+  const upcomingOrigin: Coordinate = [
+    origin[0] + renderableBoard[0].length * cellSize + 5,
+    origin[1]
+  ];
+  const upcomingShapeCoords = CONFIG.BLOCK_SHAPES[upcomingShapeName];
+  upcomingShapeCoords.forEach(([y, x]) => {
+    const xPos = x * cellSize + upcomingOrigin[0];
+    const yPos = y * cellSize + upcomingOrigin[1];
+    const colr = CONFIG.SHAPE_COLORS[upcomingShapeName];
+    pointRect(xPos, yPos, cellSize, cellSize, colr, true);
   });
   pop();
 };

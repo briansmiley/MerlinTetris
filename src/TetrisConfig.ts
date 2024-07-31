@@ -1,8 +1,8 @@
 export type Config = {
   BLOCK_SHAPES: Record<TetrisShape, Coordinate[]>;
   SPAWN_POINT: Coordinate;
-  SHAPE_COLORS: Record<TetrisShape, TetrisColor>;
-  WALL_COLOR: TetrisColor;
+  SHAPE_COLORS: Record<TetrisShape, Color>;
+  WALL_COLOR: Color;
   BOARD_WIDTH: number;
   BOARD_HEIGHT: number;
   STARTING_TICK_INTERVAL: number;
@@ -12,19 +12,19 @@ export type Config = {
   WALLS: boolean;
   MAX_GRACE_COUNT: number;
 };
-export type TetrisColor = [number, number, number];
+export type Color = [number, number, number];
 
 export type Coordinate = [number, number];
-export type InputCategory = "rotate" | "shift" | "drop";
-
-export type TetrisShape = "I" | "T" | "O" | "S" | "Z" | "L" | "J";
+export type InputCategory = "rotate" | "shift" | "drop" | "hold";
+export const SHAPE_NAMES = ["I", "T", "O", "S", "Z", "L", "J"] as const;
+export type TetrisShape = (typeof SHAPE_NAMES)[number];
 export const CONFIG: Config = {
   BLOCK_SHAPES: {
     I: [
+      [0, -2],
       [0, -1],
       [0, 0],
-      [0, 1],
-      [0, 2]
+      [0, 1]
     ],
     T: [
       [0, 0],
@@ -83,7 +83,8 @@ export const CONFIG: Config = {
     base: 10,
     drop: 250,
     rotate: 250,
-    shift: 70
+    shift: 70,
+    hold: 1000000 //hold allowance is handled by the hold/spawn block functions
   },
   WALLS: true,
   MAX_GRACE_COUNT: 5 //maximum number of gravity ticks you can skip settling from by moving
