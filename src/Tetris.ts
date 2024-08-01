@@ -417,7 +417,7 @@ export const holdAndPopHeld = (game: Game): Game => {
     newGame = spawnNewBlock({
       ...game,
       heldShape: game.fallingBlock.self.shape, //previous falling shape is now held
-      shapeQueue: [game.heldShape, ...game.shapeQueue.slice(1)] //previously held shape is now popped off the queue by spawnNewBlock
+      shapeQueue: [game.heldShape, ...game.shapeQueue] //previously held shape is now popped off the queue by spawnNewBlock
     });
   return setAllowedInput(newGame, "hold", false); //disable hold until next piece
 };

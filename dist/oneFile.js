@@ -12,6 +12,7 @@ var aButton = merlinButton(pressA, "", "a");
 var dButton = merlinButton(pressD, "", "d");
 var sButton = merlinButton(pressS, "", "s");
 var nButton = merlinButton(pressN, "", "n");
+var cButton = merlinButton(pressC, "", "c");
 function pressKey(key) {
     const binding = keyBindings[key];
     if (!game.allowedInputs[binding.type])
@@ -51,6 +52,9 @@ function pressS() {
 }
 function pressN() {
     game = startGame(game);
+}
+function pressC() {
+    pressKey("c");
 }
 const keyBindings = {
     w: {
@@ -92,6 +96,10 @@ const keyBindings = {
     ArrowDown: {
         type: "shift",
         callback: prevGameState => shiftBlock(prevGameState, "D")
+    },
+    c: {
+        type: "hold",
+        callback: prevGameState => holdAndPopHeld(prevGameState)
     }
 };
 let game;
@@ -133,34 +141,52 @@ const renderGameState = (game, origin, cellSize) => {
             pointRect(xPos, yPos, cellSize, cellSize, colr, true);
         });
     });
-    //draw the preview upcoming shape
-    const upcomingShapes = game.shapeQueue.slice(0, 3);
-    const upcomingOrigin = [
-        origin[0] + renderableBoard[0].length * cellSize + 5,
+    const sidebarOrigin = [
+        origin[0] + renderableBoard[0].length * cellSize + 2,
         origin[1]
     ];
+    //draw the held shape
+    pointRect(sidebarOrigin[0], sidebarOrigin[1], cellSize * 6, cellSize * 6, CONFIG.WALL_COLOR, true, false);
+    const heldShapeOrigin = coordinateSum(sidebarOrigin, [
+        cellSize * 3,
+        cellSize * 3
+    ]);
+    if (game.heldShape !== null)
+        drawShape(game.heldShape, heldShapeOrigin, cellSize);
+    //draw the preview upcoming shapes
+    const upcomingOrigin = coordinateSum(sidebarOrigin, [
+        cellSize * 3,
+        cellSize * 8
+    ]);
+    const upcomingShapes = game.shapeQueue.slice(0, 3);
     upcomingShapes.forEach((upcomingShapeName, i) => {
-        const upcomingShapeCoords = CONFIG.BLOCK_SHAPES[upcomingShapeName];
-        upcomingShapeCoords.forEach(([y, x]) => {
-            const xPos = x * cellSize + upcomingOrigin[0];
-            const yPos = y * cellSize + upcomingOrigin[1] + i * cellSize;
-            const colr = CONFIG.SHAPE_COLORS[upcomingShapeName];
-            pointRect(xPos, yPos, cellSize, cellSize, colr, true);
-        });
+        const shapeOrigin = coordinateSum(upcomingOrigin, [0, i * cellSize * 4]);
+        drawShape(upcomingShapeName, shapeOrigin, cellSize);
     });
     pop();
+};
+const drawShape = (shape, origin, cellSize) => {
+    const shapeCoords = CONFIG.BLOCK_SHAPES[shape];
+    shapeCoords.forEach(([y, x]) => {
+        const xPos = x * cellSize + origin[0];
+        const yPos = y * cellSize + origin[1];
+        const colr = CONFIG.SHAPE_COLORS[shape];
+        pointRect(xPos, yPos, cellSize, cellSize, colr, true);
+    });
 };
 /**manually draw a rectangle using points to avoid rounding
  * floor parameter makes it round down to the nearest pixel to avoid anti-aliasing
  */
-const pointRect = (x, y, w, h, colr, floor = false) => {
+const pointRect = (x, y, w, h, colr, floor = false, filled = true) => {
     //floor x and y if specified
     const [xPos, yPos] = floor ? [Math.floor(x), Math.floor(y)] : [x, y];
     const typeStuffColr = Array.isArray(colr) ? color(colr) : color(colr); //handles splitting the union type for p5 overloading
     loadPixels();
     for (let i = 0; i < w; i++) {
         for (let j = 0; j < h; j++) {
-            set(xPos + i, yPos + j, color(typeStuffColr));
+            if (filled || i === 0 || j === 0 || i === w - 1 || j === h - 1) {
+                set(xPos + i, yPos + j, color(typeStuffColr));
+            }
         }
     }
     updatePixels();
@@ -580,7 +606,7 @@ const holdAndPopHeld = (game) => {
         newGame = spawnNewBlock({
             ...game,
             heldShape: game.fallingBlock.self.shape, //previous falling shape is now held
-            shapeQueue: [game.heldShape, ...game.shapeQueue.slice(1)] //previously held shape is now popped off the queue by spawnNewBlock
+            shapeQueue: [game.heldShape, ...game.shapeQueue] //previously held shape is now popped off the queue by spawnNewBlock
         });
     return setAllowedInput(newGame, "hold", false); //disable hold until next piece
 };

@@ -1,7 +1,7 @@
 /// <reference path="../node_modules/@types/p5/global.d.ts" />
 //prettier-ignore
 import {Game,boardWithFallingBlock,coordinateSum,gameInit,hardDropBlock,miniPreviewBoard,rotateBlock,setAllowedInput,shiftBlock,startGame,tickGravity} from "./Tetris";
-import { CONFIG, Coordinate, InputCategory } from "./TetrisConfig";
+import { CONFIG, Coordinate, InputCategory, TetrisShape } from "./TetrisConfig";
 import { drawString } from "./pixelText";
 import { merlinButton } from "./merlinFunctions";
 
@@ -16,6 +16,7 @@ var aButton = merlinButton(pressA, "", "a");
 var dButton = merlinButton(pressD, "", "d");
 var sButton = merlinButton(pressS, "", "s");
 var nButton = merlinButton(pressN, "", "n");
+var cButton = merlinButton(pressC, "", "c");
 function pressKey(key: string) {
   const binding = keyBindings[key];
   if (!game.allowedInputs[binding.type]) return; //skip input if not allowed
@@ -57,6 +58,9 @@ function pressS() {
 }
 function pressN() {
   game = startGame(game);
+}
+function pressC() {
+  pressKey("c");
 }
 
 type KeyBinding = {
@@ -103,6 +107,10 @@ const keyBindings: Record<string, KeyBinding> = {
   ArrowDown: {
     type: "shift",
     callback: prevGameState => shiftBlock(prevGameState, "D")
+  },
+  c: {
+    type: "hold",
+    callback: prevGameState => holdAndPopHeld(prevGameState)
   }
 };
 let game: Game;
@@ -152,25 +160,52 @@ const renderGameState = (game: Game, origin: Coordinate, cellSize: number) => {
       pointRect(xPos, yPos, cellSize, cellSize, colr, true);
     });
   });
-  //draw the preview upcoming shape
-
-  const upcomingShapes = game.shapeQueue.slice(0, 3);
-  const upcomingOrigin: Coordinate = [
-    origin[0] + renderableBoard[0].length * cellSize + 5,
+  const sidebarOrigin: Coordinate = [
+    origin[0] + renderableBoard[0].length * cellSize + 2,
     origin[1]
   ];
+  //draw the held shape
+  pointRect(
+    sidebarOrigin[0],
+    sidebarOrigin[1],
+    cellSize * 6,
+    cellSize * 6,
+    CONFIG.WALL_COLOR,
+    true,
+    false
+  );
+  const heldShapeOrigin = coordinateSum(sidebarOrigin, [
+    cellSize * 3,
+    cellSize * 3
+  ]);
+  if (game.heldShape !== null)
+    drawShape(game.heldShape, heldShapeOrigin, cellSize);
+  //draw the preview upcoming shapes
+  const upcomingOrigin = coordinateSum(sidebarOrigin, [
+    cellSize * 3,
+    cellSize * 8
+  ]);
+  const upcomingShapes = game.shapeQueue.slice(0, 3);
   upcomingShapes.forEach((upcomingShapeName, i) => {
-    const upcomingShapeCoords = CONFIG.BLOCK_SHAPES[upcomingShapeName];
-    upcomingShapeCoords.forEach(([y, x]) => {
-      const xPos = x * cellSize + upcomingOrigin[0];
-      const yPos = y * cellSize + upcomingOrigin[1] + i * cellSize * 4;
-      const colr = CONFIG.SHAPE_COLORS[upcomingShapeName];
-      pointRect(xPos, yPos, cellSize, cellSize, colr, true);
-    });
+    const shapeOrigin = coordinateSum(upcomingOrigin, [0, i * cellSize * 4]);
+    drawShape(upcomingShapeName, shapeOrigin, cellSize);
   });
   pop();
 };
 
+const drawShape = (
+  shape: TetrisShape,
+  origin: Coordinate,
+  cellSize: number
+) => {
+  const shapeCoords = CONFIG.BLOCK_SHAPES[shape];
+  shapeCoords.forEach(([y, x]) => {
+    const xPos = x * cellSize + origin[0];
+    const yPos = y * cellSize + origin[1];
+    const colr = CONFIG.SHAPE_COLORS[shape];
+    pointRect(xPos, yPos, cellSize, cellSize, colr, true);
+  });
+};
 /**manually draw a rectangle using points to avoid rounding
  * floor parameter makes it round down to the nearest pixel to avoid anti-aliasing
  */
@@ -180,7 +215,8 @@ const pointRect = (
   w: number,
   h: number,
   colr: number[] | string,
-  floor: boolean = false
+  floor: boolean = false,
+  filled: boolean = true
 ) => {
   //floor x and y if specified
   const [xPos, yPos] = floor ? [Math.floor(x), Math.floor(y)] : [x, y];
@@ -188,7 +224,9 @@ const pointRect = (
   loadPixels();
   for (let i = 0; i < w; i++) {
     for (let j = 0; j < h; j++) {
-      set(xPos + i, yPos + j, color(typeStuffColr));
+      if (filled || i === 0 || j === 0 || i === w - 1 || j === h - 1) {
+        set(xPos + i, yPos + j, color(typeStuffColr));
+      }
     }
   }
   updatePixels();
